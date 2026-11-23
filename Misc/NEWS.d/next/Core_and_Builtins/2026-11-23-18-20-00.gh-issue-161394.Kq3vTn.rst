@@ -1,0 +1,4 @@
+Fix :func:`aiter` and :func:`anext` calling ``__aiter__`` and ``__anext__``
+with the object as an extra argument when they are class methods or callables
+that are not functions, such as the attributes of
+:class:`unittest.mock.MagicMock`, and finding them on the metaclass.

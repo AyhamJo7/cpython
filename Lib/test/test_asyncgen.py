@@ -817,6 +817,73 @@ class AsyncGenAsyncioTest(unittest.TestCase):
         applied_twice = aiter(applied_once)
         self.assertIs(applied_once, applied_twice)
 
+    def test_aiter_anext_bind_special_methods(self):
+        # gh-161394: an __aiter__ or __anext__ that is not a plain function
+        # is bound with the descriptor protocol, as "async for" does, not
+        # called with the instance.
+        class NotADescriptor:
+            def __init__(self, func):
+                self.func = func
+            def __call__(self):
+                return self.func()
+
+        async def get_item():
+            return 'item'
+
+        class Class:
+            @classmethod
+            def __aiter__(cls):
+                return cls.instance
+            @classmethod
+            def __anext__(cls):
+                return get_item()
+
+        class Callable:
+            __aiter__ = NotADescriptor(lambda: callable_)
+            __anext__ = NotADescriptor(get_item)
+
+        Class.instance = Class()
+        callable_ = Callable()
+        run = self.loop.run_until_complete
+        for obj in Class.instance, callable_:
+            with self.subTest(type=type(obj).__name__):
+                async def consume_one():
+                    async for item in obj:
+                        return item
+                self.assertEqual(run(consume_one()), 'item')
+                self.assertIs(aiter(obj), obj)
+                self.assertEqual(run(anext(obj)), 'item')
+                self.assertEqual(run(anext(obj, 'default')), 'item')
+
+    def test_aiter_anext_ignore_instance_and_metaclass(self):
+        # gh-161394: like "async for", the lookup of __aiter__ and
+        # __anext__ searches neither the instance nor the metaclass.
+        class Meta(type):
+            def __aiter__(cls):
+                raise AssertionError('__aiter__ found on the metaclass')
+            def __anext__(cls):
+                raise AssertionError('__anext__ found on the metaclass')
+
+        class A(metaclass=Meta):
+            pass
+
+        class ReturnsA:
+            def __aiter__(self):
+                return obj
+
+        obj = A()
+        obj.__aiter__ = lambda: obj
+        obj.__anext__ = lambda: None
+        with self.assertRaisesRegex(TypeError,
+                                    "'A' object is not an async iterable"):
+            aiter(obj)
+        with self.assertRaisesRegex(TypeError,
+                                    "'A' object is not an async iterator"):
+            anext(obj)
+        with self.assertRaisesRegex(TypeError,
+                                    "must return an async iterator, not A"):
+            aiter(ReturnsA())
+
     def make_counter(self):
         state = {'n': 0}
         async def counter():
