@@ -3416,6 +3416,49 @@ static struct PyModuleDef builtinsmodule = {
 };
 
 
+/* Helpers for Lib/_pybuiltins.py.  They are not builtins: they are added to
+   the namespace of the frozen module after it has been imported. */
+
+static PyObject *
+pybuiltins_aiter_slot(PyObject *Py_UNUSED(module), PyObject *obj)
+{
+    PyTypeObject *type = Py_TYPE(obj);
+    if (type->tp_as_async == NULL || type->tp_as_async->am_aiter == NULL) {
+        PyErr_Format(PyExc_TypeError,
+                     "'%s' object is not an async iterable",
+                     _PyType_Name(type));
+        return NULL;
+    }
+    PyObject *iterator = type->tp_as_async->am_aiter(obj);
+    if (iterator != NULL && !PyAIter_Check(iterator)) {
+        PyErr_Format(PyExc_TypeError,
+                     "%s.__aiter__() must return an async iterator, not %s",
+                     _PyType_Name(type), _PyType_Name(Py_TYPE(iterator)));
+        Py_DECREF(iterator);
+        return NULL;
+    }
+    return iterator;
+}
+
+static PyObject *
+pybuiltins_anext_slot(PyObject *Py_UNUSED(module), PyObject *obj)
+{
+    PyTypeObject *type = Py_TYPE(obj);
+    if (type->tp_as_async == NULL || type->tp_as_async->am_anext == NULL) {
+        PyErr_Format(PyExc_TypeError,
+                     "'%s' object is not an async iterator",
+                     _PyType_Name(type));
+        return NULL;
+    }
+    return type->tp_as_async->am_anext(obj);
+}
+
+static PyMethodDef pybuiltins_helpers[] = {
+    {"_aiter_slot", pybuiltins_aiter_slot, METH_O, NULL},
+    {"_anext_slot", pybuiltins_anext_slot, METH_O, NULL},
+    {NULL, NULL, 0, NULL}
+};
+
 /* Builtins implemented in Python.
 
    Lib/_pybuiltins.py is frozen into the interpreter as a bootstrap module
@@ -3439,7 +3482,19 @@ _PyBuiltin_InitPythonFunctions(PyObject *dict)
     }
 
     int rc = -1;
-    PyObject *all = PyObject_GetAttr(mod, &_Py_ID(__all__));
+    PyObject *all = NULL;
+    for (PyMethodDef *def = pybuiltins_helpers; def->ml_name != NULL; def++) {
+        PyObject *helper = PyCFunction_New(def, NULL);
+        if (helper == NULL) {
+            goto done;
+        }
+        int r = PyObject_SetAttrString(mod, def->ml_name, helper);
+        Py_DECREF(helper);
+        if (r < 0) {
+            goto done;
+        }
+    }
+    all = PyObject_GetAttr(mod, &_Py_ID(__all__));
     if (all == NULL) {
         goto done;
     }

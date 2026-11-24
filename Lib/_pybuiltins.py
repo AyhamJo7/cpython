@@ -9,6 +9,10 @@ __all__ = ['aiter', 'anext']
 
 _NOT_GIVEN = sentinel("_NOT_GIVEN")
 
+# _aiter_slot(obj) and _anext_slot(obj) are implemented in Python/bltinmodule.c
+# and added to this module when the interpreter starts.  They call the
+# am_aiter and am_anext slots of type(obj), like "async for" does.
+
 
 def aiter(object, /, stop_value=_NOT_GIVEN, *, stop_exception=_NOT_GIVEN):
     """Return an AsyncIterator for an AsyncIterable object.
@@ -17,21 +21,7 @@ def aiter(object, /, stop_value=_NOT_GIVEN, *, stop_exception=_NOT_GIVEN):
     until it returns the stop value or raises the specified exception.
     """
     if stop_value is _NOT_GIVEN and stop_exception is _NOT_GIVEN:
-        cls = type(object)
-        try:
-            # Looked up on the type, like the C slot am_aiter.
-            aiter_method = cls.__aiter__
-        except AttributeError:
-            raise TypeError(
-                f"'{cls.__name__}' object is not an async iterable"
-            ) from None
-        iterator = aiter_method(object)
-        if not hasattr(type(iterator), '__anext__'):
-            raise TypeError(
-                f"{cls.__name__}.__aiter__() must return an async iterator, "
-                f"not {type(iterator).__name__}"
-            )
-        return iterator
+        return _aiter_slot(object)
 
     if not callable(object):
         raise TypeError("aiter(): the first argument must be callable")
@@ -101,15 +91,7 @@ def anext(async_iterator, default=_NOT_GIVEN, /):
     If default is given and the async iterator is exhausted,
     it is returned instead of raising StopAsyncIteration.
     """
-    cls = type(async_iterator)
-    try:
-        # Looked up on the type, like the C slot am_anext.
-        anext_method = cls.__anext__
-    except AttributeError:
-        raise TypeError(
-            f"{cls.__name__!r} object is not an async iterator"
-        ) from None
-    awaitable = anext_method(async_iterator)
+    awaitable = _anext_slot(async_iterator)
     if default is _NOT_GIVEN:
         return awaitable
     return _anext_with_default(awaitable, default)
