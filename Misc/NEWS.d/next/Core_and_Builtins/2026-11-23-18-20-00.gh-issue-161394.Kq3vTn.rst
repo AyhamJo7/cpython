@@ -1,0 +1,5 @@
+Fix :func:`aiter` and :func:`anext` to look up and call ``__aiter__`` and
+``__anext__`` the same way as :keyword:`async for` again. Static methods, class
+methods and callables that are not functions, such as the attributes of
+:class:`unittest.mock.MagicMock`, are no longer called with the object as an
+extra argument, and methods defined only on the metaclass are ignored.

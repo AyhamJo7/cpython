@@ -3416,6 +3416,39 @@ static struct PyModuleDef builtinsmodule = {
 };
 
 
+/* Helpers for Lib/_pybuiltins.py.  They are not builtins: they are added to
+   the namespace of the frozen module after it has been imported. */
+
+static PyObject *
+pybuiltins_type_lookup(PyObject *Py_UNUSED(module),
+                       PyObject *const *args, Py_ssize_t nargs)
+{
+    if (!_PyArg_CheckPositional("_type_lookup", nargs, 3, 3)) {
+        return NULL;
+    }
+    if (!PyType_Check(args[0])) {
+        PyErr_SetString(PyExc_TypeError,
+                        "_type_lookup(): argument 1 must be a type");
+        return NULL;
+    }
+    if (!PyUnicode_Check(args[1])) {
+        PyErr_SetString(PyExc_TypeError,
+                        "_type_lookup(): argument 2 must be a string");
+        return NULL;
+    }
+    PyObject *res = _PyType_LookupRef((PyTypeObject *)args[0], args[1]);
+    if (res == NULL) {
+        return Py_NewRef(args[2]);
+    }
+    return res;
+}
+
+static PyMethodDef pybuiltins_helpers[] = {
+    {"_type_lookup", _PyCFunction_CAST(pybuiltins_type_lookup), METH_FASTCALL,
+     NULL},
+    {NULL, NULL, 0, NULL}
+};
+
 /* Builtins implemented in Python.
 
    Lib/_pybuiltins.py is frozen into the interpreter as a bootstrap module
@@ -3439,7 +3472,19 @@ _PyBuiltin_InitPythonFunctions(PyObject *dict)
     }
 
     int rc = -1;
-    PyObject *all = PyObject_GetAttr(mod, &_Py_ID(__all__));
+    PyObject *all = NULL;
+    for (PyMethodDef *def = pybuiltins_helpers; def->ml_name != NULL; def++) {
+        PyObject *helper = PyCFunction_New(def, NULL);
+        if (helper == NULL) {
+            goto done;
+        }
+        int r = PyObject_SetAttrString(mod, def->ml_name, helper);
+        Py_DECREF(helper);
+        if (r < 0) {
+            goto done;
+        }
+    }
+    all = PyObject_GetAttr(mod, &_Py_ID(__all__));
     if (all == NULL) {
         goto done;
     }

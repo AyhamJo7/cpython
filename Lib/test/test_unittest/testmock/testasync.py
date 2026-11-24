@@ -788,6 +788,24 @@ class AsyncIteratorTest(unittest.TestCase):
                 test_set_return_value_iter(mock_type)
 
 
+    def test_mock_builtin_aiter_and_anext(self):
+        # gh-161394: aiter() and anext() call the mocked methods without
+        # the mock as an argument, like "async for".
+        for mock_type in [AsyncMock, MagicMock]:
+            with self.subTest(mock_type=mock_type):
+                mock_instance = mock_type()
+                mock_instance.__aiter__.return_value = ["FOO", "BAR"]
+                iterator = aiter(mock_instance)
+                mock_instance.__aiter__.assert_called_once_with()
+                self.assertEqual(run(anext(iterator)), "FOO")
+                self.assertEqual(run(anext(iterator)), "BAR")
+
+                mock_instance = mock_type()
+                mock_instance.__anext__.return_value = "FOO"
+                self.assertEqual(run(anext(mock_instance)), "FOO")
+                mock_instance.__anext__.assert_awaited_once_with()
+
+
 class AsyncMockAssert(unittest.TestCase):
     def setUp(self):
         self.mock = AsyncMock()
