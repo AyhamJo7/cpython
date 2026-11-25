@@ -124,6 +124,7 @@ ste_new(struct symtable *st, identifier name, _Py_block_ty block,
 
     ste->ste_directives = NULL;
     ste->ste_mangled_names = NULL;
+    ste->ste_outer_private = NULL;
 
     ste->ste_type = block;
     ste->ste_scope_info = NULL;
@@ -202,6 +203,7 @@ ste_dealloc(PyObject *op)
     Py_XDECREF(ste->ste_directives);
     Py_XDECREF(ste->ste_annotation_block);
     Py_XDECREF(ste->ste_mangled_names);
+    Py_XDECREF(ste->ste_outer_private);
     PyObject_Free(ste);
 }
 
@@ -1472,6 +1474,7 @@ symtable_enter_existing_block(struct symtable *st, PySTEntryObject* ste, bool ad
      * are mangled. */
     if (prev && prev->ste_mangled_names != NULL && ste->ste_type != ClassBlock) {
         ste->ste_mangled_names = Py_NewRef(prev->ste_mangled_names);
+        ste->ste_outer_private = Py_XNewRef(prev->ste_outer_private);
     }
     /* The entry is owned by the stack. Borrow it for st_cur. */
     st->st_cur = ste;
@@ -1986,6 +1989,7 @@ symtable_visit_stmt(struct symtable *st, stmt_ty s)
             if (!st->st_cur->ste_mangled_names) {
                 return 0;
             }
+            st->st_cur->ste_outer_private = Py_XNewRef(tmp);
             VISIT_SEQ(st, type_param, s->v.ClassDef.type_params);
         }
         VISIT_SEQ(st, expr, s->v.ClassDef.bases);
@@ -3293,9 +3297,11 @@ PyObject *
 _Py_MaybeMangle(PyObject *privateobj, PySTEntryObject *ste, PyObject *name)
 {
     /* Special case for type parameter blocks around generic classes:
-     * we want to mangle type parameter names (so a type param with a private
-     * name can be used inside the class body), but we don't want to mangle
-     * any other names that appear within the type parameter scope.
+     * we want to mangle type parameter names with the name of the generic
+     * class (so a type param with a private name can be used inside the
+     * class body). Any other name that appears within the type parameter
+     * scope is outside the class body: it is a private name of the
+     * enclosing class, if there is one.
      */
     if (ste->ste_mangled_names != NULL) {
         int result = PySet_Contains(ste->ste_mangled_names, name);
@@ -3303,7 +3309,7 @@ _Py_MaybeMangle(PyObject *privateobj, PySTEntryObject *ste, PyObject *name)
             return NULL;
         }
         if (result == 0) {
-            return Py_NewRef(name);
+            return _Py_Mangle(ste->ste_outer_private, name);
         }
     }
     return _Py_Mangle(privateobj, name);

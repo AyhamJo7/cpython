@@ -930,6 +930,88 @@ class TypeParamsManglingTest(unittest.TestCase):
         self.assertIs(base1.__arg__, T)
         self.assertIs(base2.__arg__(), T)
 
+    def test_enclosing_class_private_names_in_bases(self):
+        # gh-162574: outside the body of a generic class, a private name
+        # belongs to the enclosing class, as it does for a non-generic class.
+        class Meta(type):
+            pass
+
+        class Outer:
+            __Base = dict
+            __Meta = Meta
+
+            class Inner[T](__Base, metaclass=__Meta):
+                pass
+
+        self.assertEqual(Outer.Inner.__bases__, (dict, Generic))
+        self.assertIs(type(Outer.Inner), Meta)
+
+    def test_enclosing_class_private_names_in_bounds(self):
+        class Outer:
+            __X = int
+
+            class Inner[T: __X, U: (__X, str), V = __X]:
+                pass
+
+        T, U, V = Outer.Inner.__type_params__
+        self.assertIs(T.__bound__, int)
+        self.assertEqual(U.__constraints__, (int, str))
+        self.assertIs(V.__default__, int)
+
+    def test_enclosing_class_private_names_in_nested_scopes(self):
+        class Outer:
+            def meth(self):
+                __x = "private"
+
+                class Inner[T](
+                    make_base(__x),
+                    make_base(lambda: __x),
+                    # doubly nested scope
+                    make_base(lambda: (lambda: __x)),
+                    # list comprehension
+                    make_base([__x for _ in (1,)]),
+                    # genexp
+                    make_base(__x for _ in (1,)),
+                ):
+                    pass
+
+                return Inner, locals()
+
+        Inner, ns = Outer().meth()
+        self.assertEqual(ns["_Outer__x"], "private")
+        base0, base1, base2, base3, base4, *_ = Inner.__bases__
+        self.assertEqual(base0.__arg__, "private")
+        self.assertEqual(base1.__arg__(), "private")
+        self.assertEqual(base2.__arg__()(), "private")
+        self.assertEqual(base3.__arg__, ["private"])
+        self.assertEqual(list(base4.__arg__), ["private"])
+
+    def test_type_params_shadow_enclosing_class_private_names(self):
+        class Outer:
+            __T = "outer"
+
+            class Inner[__T](make_base(__T)):
+                param = __T
+
+            after = __T
+
+        T, = Outer.Inner.__type_params__
+        self.assertEqual(T.__name__, "__T")
+        self.assertIs(Outer.Inner.param, T)
+        self.assertIs(Outer.Inner.__bases__[0].__arg__, T)
+        self.assertEqual(Outer.after, "outer")
+
+    def test_private_type_param_of_enclosing_generic_class(self):
+        class Outer[__U]:
+            class Inner[__V](make_base(__U), make_base(__V)):
+                pass
+
+        U, = Outer.__type_params__
+        V, = Outer.Inner.__type_params__
+        base0, base1, *_ = Outer.Inner.__bases__
+        self.assertIs(base0.__arg__, U)
+        self.assertIs(base1.__arg__, V)
+
 
 class TypeParamsComplexCallsTest(unittest.TestCase):
     def test_defaults(self):

@@ -1,0 +1,5 @@
+Fix private name mangling in the bases, keyword arguments and type parameter
+bounds, constraints and defaults of a generic class that is defined inside
+another class. Such names are now mangled with the name of the enclosing
+class, as they are for a class without type parameters, instead of being
+left unmangled.

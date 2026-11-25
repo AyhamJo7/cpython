@@ -99,6 +99,8 @@ typedef struct _symtable_entry {
     PyObject *ste_children;  /* list of child blocks */
     PyObject *ste_directives;/* locations of global and nonlocal statements */
     PyObject *ste_mangled_names; /* set of names for which mangling should be applied */
+    PyObject *ste_outer_private; /* string or NULL: name of the class enclosing the
+                                    generic class that ste_mangled_names is for */
 
     _Py_block_ty ste_type;
     // Optional string set by symtable.c and used when reporting errors.
