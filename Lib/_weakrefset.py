@@ -108,7 +108,11 @@ class WeakSet:
     def intersection_update(self, other):
         self.__iand__(other)
     def __iand__(self, other):
-        self.data.intersection_update(ref(item) for item in other)
+        # set.intersection_update() would keep the references created here,
+        # which have no removal callback, so remove the items that are
+        # missing from other instead.
+        self.data.difference_update(
+            self.data.difference(ref(item) for item in other))
         return self
 
     def issubset(self, other):
@@ -142,7 +146,12 @@ class WeakSet:
         if self is other:
             self.data.clear()
         else:
-            self.data.symmetric_difference_update(ref(item, self._remove) for item in other)
+            # Keep the items alive until their references are in the set.
+            # Otherwise the removal callback of a temporary item runs before
+            # its reference is added, and the dead reference stays.
+            items = list(other)
+            self.data.symmetric_difference_update(
+                ref(item, self._remove) for item in items)
         return self
 
     def union(self, other):

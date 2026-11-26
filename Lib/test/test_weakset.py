@@ -323,6 +323,47 @@ class TestWeakSet(unittest.TestCase):
             else:
                 self.assertNotIn(c, self.s)
 
+    def test_iand_dead_references(self):
+        # gh-162618: the items kept by an in-place intersection must still
+        # be removed from the set when they die.
+        for make_other in list, set, WeakSet, iter:
+            with self.subTest(other=make_other.__name__):
+                items = [ustr(c) for c in 'abc']
+                s = WeakSet(items)
+                s &= make_other(items[:2])
+                self.assertEqual(len(s), 2)
+                del items
+                support.gc_collect()  # For PyPy or other GCs.
+                self.assertEqual(len(s), 0)
+                self.assertEqual(list(s), [])
+
+    def test_iand_equal_temporaries(self):
+        # The set keeps its own items, not equal items of the other operand.
+        self.s &= map(ustr, 'abx')
+        support.gc_collect()  # For PyPy or other GCs.
+        self.assertEqual(len(self.s), 2)
+        self.assertEqual(sorted(map(id, self.s)),
+                         sorted(map(id, self.items[:2])))
+
+    def test_ixor_temporaries(self):
+        # gh-162618: an item of the other operand that dies during the
+        # operation must not leave a dead reference in the set.
+        self.s ^= map(ustr, 'xyz')
+        support.gc_collect()  # For PyPy or other GCs.
+        self.assertEqual(len(self.s), 3)
+        self.assertEqual(set(self.s), set(self.items))
+        # A temporary equal to an item of the set removes that item.
+        self.s ^= map(ustr, 'ab')
+        support.gc_collect()  # For PyPy or other GCs.
+        self.assertEqual(len(self.s), 1)
+        self.assertEqual(list(self.s), self.items[2:])
+
+    def test_symmetric_difference_temporaries(self):
+        result = self.s.symmetric_difference(map(ustr, 'axy'))
+        support.gc_collect()  # For PyPy or other GCs.
+        self.assertEqual(len(result), 2)
+        self.assertEqual(set(result), set(self.items[1:]))
+
     def test_inplace_on_self(self):
         t = self.s.copy()
         t |= t

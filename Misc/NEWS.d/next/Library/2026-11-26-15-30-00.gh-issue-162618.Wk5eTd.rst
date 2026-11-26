@@ -1,0 +1,5 @@
+Fix :class:`weakref.WeakSet` keeping dead references after ``&=``,
+:meth:`!intersection_update`, ``^=``, :meth:`!symmetric_difference_update`
+and :meth:`!symmetric_difference`, which made :func:`len` count items that
+no longer exist. An in-place intersection now keeps the items of the set
+itself rather than equal items of the other operand.
